@@ -1,0 +1,7 @@
+split,environment,n,toxic_count,toxicity_prevalence
+test,identity_absent,81234,6455,0.07946180170864417
+test,identity_present,52547,8769,0.16687917483395817
+train,identity_absent,160916,12731,0.07911581197643491
+train,identity_present,108121,17784,0.16448238547553204
+val,identity_absent,27270,2111,0.07741107444077741
+val,identity_present,17910,2944,0.16437744276940258

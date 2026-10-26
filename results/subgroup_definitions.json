@@ -1,0 +1,7 @@
+{
+  "length_cutoff_words": 35.0,
+  "short_definition": "word_count <= cutoff",
+  "long_definition": "word_count > cutoff",
+  "cutoff_source": "cleaned training partition",
+  "identity_threshold": 0.5
+}

@@ -1,0 +1,5 @@
+analysis_partition,rows_before,rows_removed,rows_after
+train,160916,1759,159157
+validation,27270,288,26982
+ID_test,81234,874,80360
+shifted_test,52547,646,51901

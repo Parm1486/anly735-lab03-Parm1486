@@ -1,0 +1,5 @@
+partition,n_rows,missing_comment_ids,missing_article_ids,rows_in_repeated_id_groups,rows_in_repeated_text_groups
+train,160916,0,0,0,1499
+validation,27270,0,0,0,152
+ID_test,81234,0,0,0,568
+shifted_test,52547,0,0,0,611

@@ -1,0 +1,307 @@
+---
+title: "Same Model, Different Evaluation Population"
+subtitle: "A WILDS-inspired laboratory using Civil Comments toxicity data"
+author: "Parminder Singh"
+date: today
+format:
+  docx:
+    toc: true
+    number-sections: true
+    reference-links: true
+jupyter: python3
+bibliography: Wilds_Replication.bib
+csl: https://www.zotero.org/styles/apa
+link-citations: true
+execute:
+  echo: false
+  warning: false
+  message: false
+  error: false
+  cache: false
+  daemon: false
+---
+
+```{python}
+#| label: setup
+#| include: false
+from pathlib import Path
+import json
+import hashlib
+import sys
+import pandas as pd
+from IPython.display import Markdown, Image, display
+
+ROOT = Path.cwd()
+RESULTS = ROOT / "results"
+SCRIPT = ROOT / "analysis.py"
+
+def sha256(path):
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+if not SCRIPT.is_file():
+    raise FileNotFoundError("Place this report beside analysis.py and the results folder.")
+
+meta = json.loads((RESULTS / "run_metadata.json").read_text())
+if meta.get("status") != "complete":
+    raise ValueError("The results do not identify a completed analysis run.")
+if sha256(SCRIPT) != meta["script_sha256"]:
+    raise ValueError("analysis.py changed after the results were generated. Rerun the analysis before rendering.")
+
+sys.path.insert(0, str(ROOT))
+from analysis import create_figures
+
+# Recreate the figures through analysis.py, without fitting a new model.
+create_figures(RESULTS)
+
+def read_result(name):
+    return pd.read_csv(RESULTS / (name + ".csv"))
+
+def show_table(frame, digits=4):
+    display(Markdown(frame.to_markdown(index=False, floatfmt=f".{digits}f")))
+
+def say(text):
+    display(Markdown(text))
+
+metrics = read_result("evaluation_metrics").set_index("partition")
+comparison = read_result("environment_comparison").set_index("metric")
+bootstrap = read_result("cluster_bootstrap_comparison").set_index("metric")
+final = read_result("final_partition_summary")
+exclusions = read_result("duplicate_exclusion_summary")
+identity = read_result("identity_subgroup_metrics")
+lengths = read_result("length_subgroup_metrics")
+length_changes = read_result("length_subgroup_comparison")
+diag = read_result("shift_diagnostics").set_index("partition")
+standard = read_result("prevalence_standardization").iloc[0]
+inspection = json.loads((RESULTS / "data_inspection.json").read_text())
+model_info = json.loads((RESULTS / "model_metadata.json").read_text())
+group_info = json.loads((RESULTS / "subgroup_definitions.json").read_text())
+source_splits = read_result("source_split_counts")
+excluded_text = read_result("excluded_text_records")
+calibration = read_result("calibration_bins")
+
+id_m = metrics.loc["ID_test"]
+shift_m = metrics.loc["shifted_test"]
+balanced = bootstrap.loc["balanced_accuracy"]
+worst = identity.loc[identity["recall"].idxmin()]
+```
+
+# Laboratory Question
+
+> What happens to our conclusions when the model stays largely the same but the evaluation environment changes?
+
+## Why This Laboratory?
+
+Performance on held-out observations from familiar conditions does not establish performance in every new population, institution, place, or time period. WILDS studies naturally occurring distribution shifts and motivates evaluating systems beyond a single average test score. This laboratory adopts that reasoning without attempting to reproduce the full benchmark [@kohWILDSBenchmarkIntheWild2021].
+
+## Connect the Lab to WILDS
+
+CivilComments-WILDS concerns binary toxicity prediction from comment text and includes identity-mention metadata. Its official evaluation emphasizes performance on identity-by-label groups. Here, the local dataset was prepared from Kaggle Jigsaw/Civil Comments records using processing scripts; its equivalence to the official release has not been independently verified. The actual source CSV is identified by checksum in the reproducibility section [@kohWILDSBenchmarkIntheWild2021; @wildscontributorsCivilCommentsDatasetLoader; @jigsawJigsawUnintendedBias2019; @civilcommentslaboratoryCivilCommentsPopulationshift2026].
+
+The experiment holds the predictive task, feature pipeline, fitted classifier, and decision threshold constant while changing the identity-mention composition of the evaluation population. This is a custom selection over real comments, not an official leaderboard reproduction and not a claim about a new hospital, platform, or calendar period. The comparison is observational, not a randomized treatment [@kohWILDSBenchmarkIntheWild2021; @civilcommentslaboratoryCivilCommentsPopulationshift2026].
+
+## Learning Objectives
+
+The goal is to assess what changes in the evidence when evaluation conditions change, not to optimize a benchmark score. The objectives are to distinguish ID from shifted evaluation, separate average performance from local failures, examine probability errors, diagnose before modifying a model, and make a judgment whose scope matches the evidence [@kohWILDSBenchmarkIntheWild2021; @civilcommentslaboratoryCivilCommentsPopulationshift2026].
+
+# Inspect the Data
+
+## Prediction target, predictors, and metadata
+
+The predictor is `comment_text`. The binary outcome is `toxicity >= 0.5`; its source annotation score lies between zero and one. A mean annotation score is not the same quantity as binary toxicity prevalence. The selected metadata fields are male, female, LGBTQ, Christian, Muslim, other religions, Black, and White. Identity annotations describe mentions in text, not the author's demographic identity. IDs, article IDs, and identity metadata are used for auditing, grouping, and analysis—not as classifier inputs [@wildscontributorsCivilCommentsDatasetLoader; @jigsawJigsawUnintendedBias2019; @civilcommentslaboratoryCivilCommentsPopulationshift2026].
+
+```{python}
+say(f"The source CSV contains {inspection['source_rows']:,} records. The preparation excluded {inspection['excluded_text_rows']:,} records with missing or whitespace-only text. The supplied split counts below precede these exclusions. Source: this laboratory's saved inspection outputs [@civilcommentslaboratoryCivilCommentsPopulationshift2026].")
+show_table(source_splits, 0)
+show_table(excluded_text[["source_row", "id", "split"]], 0)
+```
+
+## Contamination checks and repeated text
+
+The audit checks comment IDs, article IDs, and lowercase/whitespace-normalized text. No shared comment IDs or development-to-test article overlap were found in the completed run. Repeated text did occur within and across partitions. The cleaning rule excludes every occurrence of repeated normalized text among the four planned analysis partitions, rather than retaining an arbitrary first copy. This conservative rule changes the evaluated population; it does not establish that repeated comments are invalid, remove paraphrases, or establish independence [@civilcommentslaboratoryCivilCommentsPopulationshift2026].
+
+```{python}
+show_table(exclusions.rename(columns={"analysis_partition": "partition"}), 0)
+say(f"The rule removes {int(exclusions['rows_removed'].sum()):,} records from the planned partitions. Retained record identifiers and excluded record identifiers are saved separately for audit. Source: original analysis outputs [@civilcommentslaboratoryCivilCommentsPopulationshift2026].")
+```
+
+# Define Two Evaluation Conditions
+
+## What distinguishes development from the shifted environment?
+
+Development training and validation use comments in their supplied partitions for which none of the eight selected identity scores reaches 0.5. ID evaluation uses identity-mention-absent comments in the supplied test partition. Shifted evaluation uses comments in that same supplied test partition with at least one selected identity score at least 0.5. The broader source field `identity_any` is not substituted for this eight-field definition [@civilcommentslaboratoryCivilCommentsPopulationshift2026].
+
+```{python}
+show_table(final, 4)
+```
+
+The identity-present training and validation comments are deliberately excluded from development. This makes the population shift explicit, but it also limits conclusions: there is no identity-present ID population for a matched identity-specific degradation comparison. Both test populations retain their supplied article context, including shared test articles. These shared articles do not create development-to-test article overlap [@civilcommentslaboratoryCivilCommentsPopulationshift2026].
+
+# Hold the Modeling Strategy Steady
+
+A single pipeline fits TF–IDF features and logistic regression using cleaned development training comments only. It uses word unigrams and bigrams, sublinear term frequency, minimum document frequency 3, and at most 50,000 features. Logistic regression uses C=1.0, the liblinear solver, a maximum of 1,000 iterations, no class weighting, and seed 42. Validation is diagnostic only: it selects neither hyperparameters nor the decision threshold. The fixed classification threshold is 0.5 in every population [@scikit-learndevelopersTfidfVectorizer; @scikit-learndevelopersLogisticRegression; @civilcommentslaboratoryCivilCommentsPopulationshift2026].
+
+```{python}
+say(f"The completed run fits {model_info['training_records']:,} training records and retains {model_info['vocabulary_size']:,} text features. The solver reports {model_info['solver_iterations']} iterations. Source: saved model metadata [@civilcommentslaboratoryCivilCommentsPopulationshift2026].")
+```
+
+This is the manageable baseline chosen for this laboratory. A separate course starter repository's prescribed model has not been verified; consequently, the report does not claim to reproduce an unspecified starter model. The important experimental control is that the same fitted pipeline evaluates both test populations [@civilcommentslaboratoryCivilCommentsPopulationshift2026; @kohWILDSBenchmarkIntheWild2021].
+
+## Metrics and uncertainty
+
+Balanced accuracy is primary and averages toxic recall and non-toxic specificity. Secondary evidence includes accuracy, precision, recall, specificity, F1, ROC AUC, and average precision. Brier score and log loss summarize probability-prediction error; lower is better, and neither is a pure calibration statistic. Ten-bin ECE here is the bin-frequency-weighted absolute difference between mean predicted toxicity probability and observed toxicity prevalence, using equal-width probability bins [@scikit-learndevelopersMetricsScoringQuantifying; @scikit-learndevelopersProbabilityCalibration; @civilcommentslaboratoryCivilCommentsPopulationshift2026].
+
+```{python}
+say(f"Uncertainty for eight metrics uses {meta['bootstrap_repetitions']:,} joint article-cluster bootstrap replicates over {meta['joint_test_articles']:,} distinct test articles. Each selected article contributes all its comments in both populations. Intervals are percentile intervals for shifted-minus-ID differences, conditional on one fitted model and the cleaned samples. They assume article-level resampling is appropriate, do not capture training variability or cross-article author dependence, and are not adjusted for multiple comparisons [@cameronBootstrapMethods2022; @civilcommentslaboratoryCivilCommentsPopulationshift2026].")
+```
+
+# Evaluate In-Distribution Performance
+
+```{python}
+cols = ["n", "toxicity_prevalence", "accuracy", "balanced_accuracy", "recall", "specificity", "f1"]
+show_table(metrics.loc[["validation", "ID_test"], cols].reset_index())
+say(f"ID accuracy is {id_m['accuracy']:.2%}, but toxic recall is only {id_m['recall']:.2%}. The model detects {int(id_m['true_positive']):,} toxic comments and misses {int(id_m['false_negative']):,}. Thus high overall accuracy is not evidence of satisfactory toxic-comment detection even under familiar conditions. Source: original evaluation results [@civilcommentslaboratoryCivilCommentsPopulationshift2026].")
+```
+
+# Evaluate the Shifted Environment
+
+## How does predictive performance change?
+
+The pipeline is not rebuilt, recalibrated, or tuned using the shifted test data. Change in the following table means shifted minus ID. Positive changes improve higher-is-better scores but worsen Brier score, log loss, and ECE [@civilcommentslaboratoryCivilCommentsPopulationshift2026; @scikit-learndevelopersMetricsScoringQuantifying].
+
+```{python}
+show_table(comparison.reset_index()[["metric", "ID", "shifted", "change_shifted_minus_ID", "better_direction"]])
+show_table(bootstrap.reset_index()[["metric", "change_shifted_minus_ID", "ci_95_low", "ci_95_high"]])
+say(f"Balanced accuracy changes from {balanced['ID']:.4f} to {balanced['shifted']:.4f}: {100*balanced['change_shifted_minus_ID']:+.2f} percentage points, with a 95% article-cluster bootstrap interval of [{100*balanced['ci_95_low']:+.2f}, {100*balanced['ci_95_high']:+.2f}] points. Shifted toxic recall is {shift_m['recall']:.2%}: {int(shift_m['true_positive']):,} toxic comments are detected and {int(shift_m['false_negative']):,} are missed. Source: original analysis results [@civilcommentslaboratoryCivilCommentsPopulationshift2026].")
+```
+
+```{python}
+#| label: fig-performance
+#| fig-cap: "Fixed-model performance across the two evaluation populations. Source: original laboratory analysis."
+display(Image(filename=str(RESULTS / "performance_comparison.png")))
+```
+
+## Which performance dimension changes most?
+
+```{python}
+classification = ["accuracy", "balanced_accuracy", "precision", "recall", "specificity", "f1", "roc_auc", "average_precision"]
+key = comparison.loc[classification, "change_shifted_minus_ID"].abs().idxmax()
+r = comparison.loc[key]
+say(f"Among the prespecified classification scores on the 0–1 scale, {key} has the largest absolute point change ({r['change_shifted_minus_ID']:+.4f}). The error pattern is more informative than the ranking alone: toxic recall falls while specificity changes little. The bootstrap intervals for precision and specificity include zero; this does not establish equivalence. Log-loss changes are not ranked against F1 changes because these quantities have different scales and meanings [@civilcommentslaboratoryCivilCommentsPopulationshift2026; @scikit-learndevelopersMetricsScoringQuantifying].")
+```
+
+# Look Beneath the Average
+
+## Is degradation similar across relevant subgroups?
+
+```{python}
+say(f"The shared length boundary is the cleaned training median: {group_info['length_cutoff_words']:g} words. Short means at or below this boundary; long means above it. This boundary is not selected from test outcomes [@civilcommentslaboratoryCivilCommentsPopulationshift2026].")
+show_table(length_changes)
+```
+
+```{python}
+#| label: fig-length
+#| fig-cap: "Balanced accuracy by a common training-defined comment-length boundary. Source: original laboratory analysis."
+display(Image(filename=str(RESULTS / "length_comparison.png")))
+```
+
+```{python}
+short = length_changes.loc[(length_changes.length_group == "short") & (length_changes.metric == "balanced_accuracy")].iloc[0]
+long = length_changes.loc[(length_changes.length_group == "long") & (length_changes.metric == "balanced_accuracy")].iloc[0]
+say(f"The observed balanced-accuracy change is {100*short['change_shifted_minus_ID']:+.2f} percentage points for short comments and {100*long['change_shifted_minus_ID']:+.2f} for long comments. Degradation is descriptively uneven, but a difference between subgroup changes has not been tested with its own interval. A larger change must also be distinguished from a lower final score [@civilcommentslaboratoryCivilCommentsPopulationshift2026].")
+show_table(identity[["identity", "n", "toxic_n", "recall", "specificity", "balanced_accuracy"]])
+say(f"Within shifted test, the lowest observed toxic recall is {worst['recall']:.2%} for {worst['identity']} mentions: {int(worst['true_positive']):,} of {int(worst['toxic_n']):,} toxic comments are detected. Identity groups overlap and are not additive. They describe mentions, not authors, and their differences are descriptive rather than uncertainty-adjusted. These are local shifted-population failures, not matched identity-specific ID-to-shifted changes [@civilcommentslaboratoryCivilCommentsPopulationshift2026; @wildscontributorsCivilCommentsDatasetLoader].")
+```
+
+```{python}
+#| label: fig-identity
+#| fig-cap: "Toxic recall within overlapping identity-mention groups in shifted test. Source: original laboratory analysis."
+display(Image(filename=str(RESULTS / "identity_recall.png")))
+```
+
+# Diagnose 
+
+## What evidence suggests a possible explanation?
+
+### Outcome and predictor composition
+
+```{python}
+show_table(diag[["observed_toxicity_prevalence", "mean_words", "median_words", "fraction_short"]].reset_index())
+```
+
+The shifted population differs in outcome prevalence and length composition. The earlier length subgroup comparison shows lower shifted balanced accuracy within both coarse length categories, so merely identifying more long comments is not a sufficient explanation. Nonetheless, these strata do not isolate a causal length effect or hold all other text properties constant [@civilcommentslaboratoryCivilCommentsPopulationshift2026].
+
+### Representation by the training vocabulary
+
+```{python}
+show_table(diag[["outside_vocabulary_ngram_fraction", "zero_feature_comment_fraction"]].reset_index())
+```
+
+The outside-vocabulary fraction counts analyzer-generated unigrams and bigrams absent from the retained vocabulary. It includes terms excluded by minimum frequency and the feature cap, not only terms never encountered during training. The modest coverage difference and low featureless-comment rates do not establish vocabulary failure as the main explanation. They also do not rule out changes in term frequencies, context, or feature–outcome relationships [@scikit-learndevelopersTfidfVectorizer; @civilcommentslaboratoryCivilCommentsPopulationshift2026].
+
+### Probability behavior
+
+```{python}
+show_table(diag[["observed_toxicity_prevalence", "mean_predicted_toxicity", "mean_probability_minus_prevalence"]].reset_index())
+```
+
+
+Next Image
+
+```{python}
+#| label: fig-calibration
+#| fig-cap: "Reliability diagram using ten equal-width bins; empty bins are omitted. Bin counts are saved in calibration_bins.csv. Source: original laboratory analysis."
+display(Image(filename=str(RESULTS / "reliability_diagram.png")))
+```
+
+Mean predicted probability is below observed prevalence in shifted test, supporting aggregate underprediction. This mean is not the fraction classified as toxic, and its discrepancy does not imply underprediction in every probability bin. The reliability diagram compares within-bin probability means and observed fractions; sparse bins require particular caution [@scikit-learndevelopersProbabilityCalibration; @civilcommentslaboratoryCivilCommentsPopulationshift2026].
+
+### Standardizing the class mixture
+
+Using ID toxic prevalence \(\pi_{ID}\), define the diagnostic standardized accuracy as
+
+\[
+\operatorname{Accuracy}_{shifted,std}
+= \pi_{ID}\operatorname{Recall}_{shifted}
++ (1-\pi_{ID})\operatorname{Specificity}_{shifted}.
+\]
+
+This calculation retains shifted class-conditional error rates while replacing only the class mixture. It is neither an adapted model nor a causal decomposition [@scikit-learndevelopersMetricsScoringQuantifying; @civilcommentslaboratoryCivilCommentsPopulationshift2026].
+
+```{python}
+std_table = pd.DataFrame({"quantity": ["ID accuracy", "Raw shifted accuracy", "Shifted accuracy at ID prevalence", "Raw shifted-minus-ID gap", "Standardized shifted-minus-ID gap"],
+    "value": [standard["ID_accuracy"], standard["raw_shifted_accuracy"], standard["shifted_accuracy_at_ID_prevalence"], standard["raw_accuracy_gap_shifted_minus_ID"], standard["standardized_gap_shifted_minus_ID"]]})
+show_table(std_table)
+say(f"The accuracy gap changes from {100*standard['raw_accuracy_gap_shifted_minus_ID']:+.2f} to {100*standard['standardized_gap_shifted_minus_ID']:+.2f} percentage points under this standardization. Class composition is therefore important for interpreting raw accuracy. This does not remove the observed recall and balanced-accuracy declines or establish a pure label-shift mechanism [@civilcommentslaboratoryCivilCommentsPopulationshift2026].")
+```
+
+### Measurement and unresolved explanations
+
+The analysis uses existing annotations, applies common thresholds, and preserves the supplied splits. It does not audit crowdworker procedures, establish annotation invariance across groups, or identify whether predictor–outcome relationships changed causally. Poor representation of identity-present comments in development is imposed by the design, but its contribution cannot be separated from topic, wording, prevalence, and annotation differences in this comparison [@jigsawJigsawUnintendedBias2019; @kohWILDSBenchmarkIntheWild2021; @civilcommentslaboratoryCivilCommentsPopulationshift2026].
+
+# Make an Evidence-Based Judgment
+
+## What does the experiment allow us to conclude about generalization?
+
+This fitted pipeline does not retain its ID performance in the selected identity-present evaluation population. The primary metric's article-cluster interval supports lower shifted balanced accuracy under the stated resampling assumptions. High ID accuracy alone was also insufficient: ID toxic recall was low before the environment changed. Generalization evidence must therefore be tied to the population and performance dimension actually evaluated [@civilcommentslaboratoryCivilCommentsPopulationshift2026; @kohWILDSBenchmarkIntheWild2021].
+
+## What does it not allow us to conclude?
+
+The experiment does not identify identity mentions as a cause, infer authors' demographics, establish discrimination against people, guarantee future platform/time performance, or show that other model classes would behave similarly. Subgroup heterogeneity is descriptive. The confidence intervals do not capture training variability or all possible dependence, and repeated-text exclusion restricts the evaluated population. The processed CSV's exact equivalence to the official WILDS release and compliance with a separately prescribed course model remain unverified [@civilcommentslaboratoryCivilCommentsPopulationshift2026; @kohWILDSBenchmarkIntheWild2021].
+
+## Deployment judgment
+
+Judgment: do not deploy this fixed model at threshold 0.5 as a standalone toxicity-detection or autonomous moderation system. It misses most toxic comments even in ID evaluation, performs worse in shifted evaluation, and has particularly low recall in several identity-mention groups. This is an evidence-based laboratory judgment for the stated use, not a universal claim that the model has no possible value in a separately evaluated human-assisted workflow. The experiment itself does not specify an operational cost function or validate a safe deployment threshold [@civilcommentslaboratoryCivilCommentsPopulationshift2026].
+
+## What additional evidence is needed before deployment?
+
+Before considering deployment, obtain representative external and prospective labels from the intended platform; specify acceptable missed-toxicity and false-positive costs; inspect annotation reliability and disagreement; obtain adequate subgroup and intersectional coverage; repeat training across seeds and development samples; and evaluate calibration and threshold trade-offs using development data rather than repeatedly reusing the final test set. Human-review capacity, appeals, monitoring, drift triggers, and rollback procedures also need operational evaluation. These are proposed evidence requirements, not benefits demonstrated by the current experiment [@kohWILDSBenchmarkIntheWild2021; @civilcommentslaboratoryCivilCommentsPopulationshift2026].
+
+
+# References {.unnumbered}
+
+::: {#refs}
+:::

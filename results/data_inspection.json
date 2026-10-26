@@ -1,0 +1,109 @@
+{
+  "source_rows": 448000,
+  "excluded_text_rows": 2,
+  "source_columns": [
+    "Unnamed: 0",
+    "id",
+    "comment_text",
+    "split",
+    "created_date",
+    "publication_id",
+    "parent_id",
+    "article_id",
+    "rating",
+    "funny",
+    "wow",
+    "sad",
+    "likes",
+    "disagree",
+    "toxicity",
+    "severe_toxicity",
+    "obscene",
+    "sexual_explicit",
+    "identity_attack",
+    "insult",
+    "threat",
+    "male",
+    "female",
+    "transgender",
+    "other_gender",
+    "heterosexual",
+    "homosexual_gay_or_lesbian",
+    "bisexual",
+    "other_sexual_orientation",
+    "christian",
+    "jewish",
+    "muslim",
+    "hindu",
+    "buddhist",
+    "atheist",
+    "other_religion",
+    "black",
+    "white",
+    "asian",
+    "latino",
+    "other_race_or_ethnicity",
+    "physical_disability",
+    "intellectual_or_learning_disability",
+    "psychiatric_or_mental_illness",
+    "other_disability",
+    "identity_annotator_count",
+    "toxicity_annotator_count",
+    "LGBTQ",
+    "other_religions",
+    "asian_latino_etc",
+    "disability_any",
+    "identity_any",
+    "num_identities",
+    "more_than_one_identity",
+    "na_gender",
+    "na_orientation",
+    "na_religion",
+    "na_race",
+    "na_disability"
+  ],
+  "toxicity_summary": {
+    "count": 447998.0,
+    "mean": 0.1400296298751208,
+    "std": 0.2183966316852277,
+    "min": 0.0,
+    "25%": 0.0,
+    "50%": 0.0,
+    "75%": 0.2,
+    "max": 1.0
+  },
+  "identity_ranges": {
+    "male": {
+      "min": 0.0,
+      "max": 1.0
+    },
+    "female": {
+      "min": 0.0,
+      "max": 1.0
+    },
+    "LGBTQ": {
+      "min": 0,
+      "max": 1
+    },
+    "christian": {
+      "min": 0.0,
+      "max": 1.0
+    },
+    "muslim": {
+      "min": 0.0,
+      "max": 1.0
+    },
+    "other_religions": {
+      "min": 0,
+      "max": 1
+    },
+    "black": {
+      "min": 0.0,
+      "max": 1.0
+    },
+    "white": {
+      "min": 0.0,
+      "max": 1.0
+    }
+  }
+}

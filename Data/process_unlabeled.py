@@ -43,9 +43,11 @@ def merge_dfs(unlabeled, labeled):
     Drops columns that are in unlabeled but not labeled
     Adds columns that are in labeled but not unlabeled and sets values to NaN
     """
-    common_cols = unlabeled.columns & labeled.columns
+    common_cols = unlabeled.columns.intersection(
+        labeled.columns,sort=False,
+    )
     unlabeled = unlabeled[common_cols]
-    joint = labeled.append(unlabeled, ignore_index = True)
+    joint = pd.concat([labeled, unlabeled], ignore_index=True)
     return joint
 
 def main(args):
