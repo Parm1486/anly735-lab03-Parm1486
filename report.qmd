@@ -257,10 +257,9 @@ Next Image
 display(Image(filename=str(RESULTS / "reliability_diagram.png")))
 ```
 
-Mean predicted probability is below observed prevalence in shifted test, supporting aggregate underprediction. This mean is not the fraction classified as toxic, and its discrepancy does not imply underprediction in every probability bin. The reliability diagram compares within-bin probability means and observed fractions; sparse bins require particular caution [@scikit-learndevelopersProbabilityCalibration; @civilcommentslaboratoryCivilCommentsPopulationshift2026].
+Mean predicted probability is below observed prevalence in shifted test, supporting aggregate underprediction. This mean is not the fraction classified as toxic, and its discrepancy does not imply underprediction in every probability bin. The reliability diagram compares within-bin probability means and observed fractions; sparse bins require caution [@scikit-learndevelopersProbabilityCalibration; @civilcommentslaboratoryCivilCommentsPopulationshift2026].
 
 ### Standardizing the class mixture
-
 Using ID toxic prevalence \(\pi_{ID}\), define the diagnostic standardized accuracy as
 
 \[
@@ -286,7 +285,7 @@ The analysis uses existing annotations, applies common thresholds, and preserves
 
 ## What does the experiment allow us to conclude about generalization?
 
-This fitted pipeline does not retain its ID performance in the selected identity-present evaluation population. The primary metric's article-cluster interval supports lower shifted balanced accuracy under the stated resampling assumptions. High ID accuracy alone was also insufficient: ID toxic recall was low before the environment changed. Generalization evidence must therefore be tied to the population and performance dimension actually evaluated [@civilcommentslaboratoryCivilCommentsPopulationshift2026; @kohWILDSBenchmarkIntheWild2021].
+This fitted pipeline does not retain its ID performance in the selected identity-present evaluation population. The primary metric's article-cluster interval supports lower shifted balanced accuracy under the stated resampling assumptions. High ID accuracy alone was also insufficient: ID toxic recall was low before the environment changed. Generalization evidence must therefore be tied to the population and performance dimension evaluated [@civilcommentslaboratoryCivilCommentsPopulationshift2026; @kohWILDSBenchmarkIntheWild2021].
 
 ## What does it not allow us to conclude?
 
